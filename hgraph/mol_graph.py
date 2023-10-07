@@ -12,9 +12,9 @@ class MolGraph(object):
     BOND_LIST = [Chem.rdchem.BondType.SINGLE, Chem.rdchem.BondType.DOUBLE, Chem.rdchem.BondType.TRIPLE, Chem.rdchem.BondType.AROMATIC] 
     MAX_POS = 20
 
-    def __init__(self, smiles):
+    def __init__(self, smiles, conformer=None):
         self.smiles = smiles
-        self.mol = get_mol(smiles)
+        self.mol = get_mol(smiles, conformer=conformer)
 
         self.mol_graph = self.build_mol_graph()
         self.clusters, self.atom_cls = self.find_clusters()
@@ -83,6 +83,9 @@ class MolGraph(object):
         return graph if n - m == 1 else nx.maximum_spanning_tree(graph)
 
     def label_tree(self):
+        if len(self.mol.GetConformers()):
+            cluster_geo = [[self.mol.GetConformer().GetAtomPosition(j) for j in c] for c in self.clusters]
+
         def dfs(order, pa, prev_sib, x, fa):
             pa[x] = fa 
             sorted_child = sorted([ y for y in self.mol_tree[x] if y != fa ]) #better performance with fixed order
@@ -114,7 +117,9 @@ class MolGraph(object):
             tree.nodes[i]['inter_label'] = inter_label
             tree.nodes[i]['smiles'] = smiles = get_smiles(set_atommap(cmol))
             tree.nodes[i]['label'] = (smiles, ismiles) if len(cls) > 1 else (smiles, smiles)
-            tree.nodes[i]['cluster'] = cls 
+            tree.nodes[i]['cluster'] = cls   
+            if len(self.mol.GetConformers()):
+                tree.nodes[i]['coords'] = cluster_geo[i]                      
             tree.nodes[i]['assm_cands'] = []
 
             if pa[i] >= 0 and len(self.clusters[ pa[i] ]) > 2: #uncertainty occurs in assembly
@@ -136,7 +141,8 @@ class MolGraph(object):
         mol = self.mol
         graph = nx.DiGraph(Chem.rdmolops.GetAdjacencyMatrix(mol))
         for atom in mol.GetAtoms():
-            graph.nodes[atom.GetIdx()]['label'] = (atom.GetSymbol(), atom.GetFormalCharge())
+            label = (atom.GetSymbol(), atom.GetFormalCharge())
+            graph.nodes[atom.GetIdx()]['label'] = label
 
         for bond in mol.GetBonds():
             a1 = bond.GetBeginAtom().GetIdx()

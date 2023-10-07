@@ -12,9 +12,13 @@ def set_atommap(mol, num=0):
         atom.SetAtomMapNum(num)
     return mol
 
-def get_mol(smiles):
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is not None: Chem.Kekulize(mol)
+def get_mol(smiles, conformer=None):
+    if conformer:
+        mol = Chem.MolFromSmiles(smiles)
+        mol.AddConformer(conformer)
+    else:
+        mol = Chem.MolFromSmiles(smiles)
+    if mol is not None: Chem.Kekulize(mol, clearAromaticFlags=True)
     return mol
 
 def get_smiles(mol):
