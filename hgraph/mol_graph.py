@@ -79,6 +79,8 @@ class MolGraph(object):
                         graph.add_edge(c1, c2, weight = len(inter))
 
         n, m = len(graph.nodes), len(graph.edges)
+        if n-m > 1:
+            breakpoint()
         assert n - m <= 1 #must be connected
         return graph if n - m == 1 else nx.maximum_spanning_tree(graph)
 
