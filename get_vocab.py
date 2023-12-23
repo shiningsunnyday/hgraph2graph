@@ -13,6 +13,8 @@ import matplotlib.pyplot as plt
 import networkx as nx
 from collections import defaultdict
 import sys
+import numpy as np
+from PIL import Image
 sys.path.append('/home/msun415/my_data_efficient_grammar/')
 
 from fuseprop import find_fragments
@@ -442,14 +444,18 @@ def process(args, data):
     os.makedirs(fig_dir, exist_ok=True)
     os.makedirs(walk_dir, exist_ok=True)
     clearer_smiles = []
+    clearer_indices = [40, 41, 42, 43, 44, 45, 46, 55, 76, 77, 78, 79, 80, 81, 82, 97, 98, 99, 100, 105, 106, 107, 108, 109, 171]
+    pics = []
     for i, line in tqdm(enumerate(data)):
-        if i+1 not in [170,204,206,253,255,286,288,293,295,299,301,303,309]:
+        # if i+1 not in [170,204,206,253,255,286,288,293,295,299,301,303,309]:
+        if i+1 not in clearer_indices:
             continue
         s = line.strip("\r\n ") 
         hmol = MolGraph(s)           
         for j, a in enumerate(hmol.mol.GetAtoms()):
             a.SetProp('atomLabel', f"{a.GetSymbol()}{j+1}")
         Chem.Draw.MolToFile(hmol.mol, os.path.join(fig_dir, f'{i+1}.png'), size=(1000,1000))
+        pics.append(os.path.join(fig_dir, f'{i+1}.png'))
         clearer_smiles.append(f"{i+1} {s}")
 
         # edges = []
@@ -475,6 +481,15 @@ def process(args, data):
         # nx.write_edgelist(G, os.path.join(walk_dir, f"walk_{i}.edgelist"))
     with open('./seg_debug_smiles.txt', 'w+') as f: 
         f.write('\n'.join(clearer_smiles))
+    grid_dim = 1+int(np.sqrt(len(pics)-1))
+    f, axes = plt.subplots(grid_dim, (len(pics)-1)//grid_dim+1, figsize=(10,10))
+    grid_dim = (len(pics)-1)//grid_dim+1
+    for i in range(len(pics)):
+        axes[i//grid_dim][i%grid_dim].imshow(Image.open(pics[i]))
+        axes[i//grid_dim][i%grid_dim].set_title(f"{clearer_indices[i]}")
+        axes[i//grid_dim][i%grid_dim].set_xticks([])
+        axes[i//grid_dim][i%grid_dim].set_yticks([])
+    f.savefig('./grid.png', dpi=1000.)
     return vocab_mols
 
 
@@ -491,9 +506,9 @@ def preprocess(smi):
 
 
 def main(args):
-    if args.file:
+    if args.data_file:
         data = []
-        lines = open(args.file).readlines()
+        lines = open(args.data_file).readlines()
         # data = [preprocess(l.split(',')[0]) for l in lines]
         data = [l.split(',')[0] for l in lines]
     else:
@@ -538,7 +553,11 @@ def seg_mol(mol, mol_segs, vocab_mols, l):
         if not cluster or not red_bond_info:
             print(f"{g1} bad syntax")            
             return l, None            
-        cluster = set(map(int, cluster.split(',')))
+        try:
+            cluster = set(map(int, cluster.split(',')))
+        except:
+            print(f"{g1} bad syntax")
+            return l, None
         given_extras = red_bond_info.split(';')
         for e in given_extras:
             extra = list(map(int, e.split(',')))
@@ -550,7 +569,11 @@ def seg_mol(mol, mol_segs, vocab_mols, l):
                 except:
                     print(f"{g2} bad syntax")                    
                     return l, None
-                extra_cluster = set(map(int, extra_cluster.split(',')))    
+                try:
+                    extra_cluster = set(map(int, extra_cluster.split(',')))    
+                except:
+                    print(f"{g2} bad syntax")
+                    return l, None
                 if extra_cluster & e_atoms:
                     if extra_cluster & e_atoms != e_atoms:
                         print(f"{extra} is not entirely contained in {g2.split(':')[0]}")                        
@@ -561,9 +584,7 @@ def seg_mol(mol, mol_segs, vocab_mols, l):
                     print(f"seg {i} extra {extra} is not among black atom sets")
                     return l, None
         for exist_cluster in clusters:
-            if cluster & exist_cluster:
-                if cluster == exist_cluster:
-                    breakpoint()
+            if cluster & exist_cluster:             
                 print(f"{cluster} should not intersect existing {exist_cluster}")
                 return l, None
         clusters.append(cluster)
@@ -686,7 +707,7 @@ def seg_groups(args):
     os.makedirs(fig_dir, exist_ok=True)
     os.makedirs(walk_dir, exist_ok=True)    
     os.makedirs(group_dir, exist_ok=True)   
-    os.makedirs(label_dir, exist_ok=True)   
+    os.makedirs(label_dir, exist_ok=True)  
 
     data = []
     lines = open(args.data_file).readlines()
