@@ -17,7 +17,7 @@ import numpy as np
 from PIL import Image
 sys.path.append('/home/msun415/my_data_efficient_grammar/')
 
-from fuseprop import find_fragments
+# from fuseprop import find_fragments
 
 
 def mol_to_graph(mol, inds, r=False):
@@ -545,53 +545,72 @@ def seg_mol(mol, mol_segs, vocab_mols, l):
     for i, g1 in enumerate(mol_segs):            
         extras = []
         edges_i = []
-        try:
-            cluster, red_bond_info = g1.split(':')
-        except:
-            print(f"{g1} bad syntax")            
-            return l, None
-        if not cluster or not red_bond_info:
+        if ':' in g1:
+            if len(g1.split(':')) == 2:
+                cluster, red_bond_info = g1.split(':')
+            else:
+                print(f"{g1} bad syntax")            
+                return l, None
+        else:
+            cluster = g1
+            if len(mol_segs) != 1:
+                print(f"if {g1} has no red atoms, there should be only one segment")
+                return l, None               
+            else:
+                red_bond_info = ''
+        
+        # syntax-check cluster and red_bond_info
+        for c in cluster.split(','):
+            if not c.isdigit():
+                print(f"{cluster} bad syntax")            
+                return l, None
+        if red_bond_info:
+            for red_bond_group in red_bond_info.split(';'):
+                for r in red_bond_group.split(','):
+                    if not r.isdigit():
+                        print(f"{red_bond_info} bad syntax")
+                        return l, None
+                
+                       
+        if not cluster:
             print(f"{g1} bad syntax")            
             return l, None            
-        try:
+       
+        if red_bond_info:
             cluster = set(map(int, cluster.split(',')))
-        except:
-            print(f"{g1} bad syntax")
-            return l, None
-        given_extras = red_bond_info.split(';')
-        for e in given_extras:
-            extra = list(map(int, e.split(',')))
-            e_atoms = set(map(int, e.split(',')))
-            extras.append(extra)
-            for j, g2 in enumerate(mol_segs):
-                try:
-                    extra_cluster, _ = g2.split(':')
-                except:
-                    print(f"{g2} bad syntax")                    
-                    return l, None
-                try:
+            given_extras = red_bond_info.split(';')
+            for e in given_extras:
+                extra = list(map(int, e.split(',')))
+                e_atoms = set(map(int, e.split(',')))
+                extras.append(extra)
+                for j, g2 in enumerate(mol_segs):
+                    try:
+                        extra_cluster, _ = g2.split(':')
+                    except:
+                        print(f"{g2} bad syntax")                    
+                        return l, None
                     extra_cluster = set(map(int, extra_cluster.split(',')))    
-                except:
-                    print(f"{g2} bad syntax")
+                    if extra_cluster & e_atoms:
+                        if extra_cluster & e_atoms != e_atoms:
+                            print(f"{extra} is not entirely contained in {g2.split(':')[0]}")                        
+                            return l, None                    
+                        edges_i.append([i, j, [extras[-1]]])
+                        break
+                    if j == len(mol_segs)-1:
+                        print(f"seg {i} extra {extra} is not among black atom sets")
+                        return l, None
+            for exist_cluster in clusters:
+                if cluster & exist_cluster:
+                    if cluster == exist_cluster:
+                        breakpoint()
+                    print(f"{cluster} should not intersect existing {exist_cluster}")
                     return l, None
-                if extra_cluster & e_atoms:
-                    if extra_cluster & e_atoms != e_atoms:
-                        print(f"{extra} is not entirely contained in {g2.split(':')[0]}")                        
-                        return l, None                    
-                    edges_i.append([i, j, [extras[-1]]])
-                    break
-                if j == len(mol_segs)-1:
-                    print(f"seg {i} extra {extra} is not among black atom sets")
-                    return l, None
-        for exist_cluster in clusters:
-            if cluster & exist_cluster:             
-                print(f"{cluster} should not intersect existing {exist_cluster}")
-                return l, None
-        clusters.append(cluster)
-    
-    
-        cluster, red_bond_info = g1.split(':')
-        cluster = list(map(int, cluster.split(',')))
+            clusters.append(cluster)                
+            cluster, red_bond_info = g1.split(':')
+            cluster = list(map(int, cluster.split(',')))
+        else:
+            cluster = list(map(int, cluster.split(',')))
+            clusters.append(set(cluster))
         extra_atoms = [e for extra in extras for e in extra]
         extra_set = set(extra_atoms)            
         if len(extra_set) != len(extra_atoms):
@@ -680,15 +699,17 @@ def seg_mol(mol, mol_segs, vocab_mols, l):
             breakpoint()
         b2 = [global_to_local_idxes[dest][idx] for idx in global_idx_1]
         if (dest, src) not in edge_data_lookup:
-            # print(f"segment {mol_segs[dest]} needs to connect back to {mol_segs[src]}")
+            print(f"segment {mol_segs[dest]} needs to connect back to {mol_segs[src]}")
             return l, None
         global_idx_2, r_grp_2 = edge_data_lookup[(dest, src)]
         b1 = [global_to_local_idxes[src][idx] for idx in global_idx_2]
         graph.add_edge(node_label[src], node_label[dest], r_grp_1=r_grp_1, b2=b2, r_grp_2=r_grp_2, b1=b1)
         graph.add_edge(node_label[dest], node_label[src], r_grp_1=r_grp_2, b2=b1, r_grp_2=r_grp_1, b1=b2)                            
+
     if reduce(lambda x,y: x|y, clusters) != set(range(1, mol.GetNumAtoms()+1)):
         print(f"black atoms don't add up to {list(range(1, mol.GetNumAtoms()+1))}")
         return l, None        
+   
     # print(" ".join([mol_seg.split(":")[0] for mol_seg in mol_segs]))
     # return l, True
     return l, graph
