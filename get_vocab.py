@@ -600,9 +600,7 @@ def seg_mol(mol, mol_segs, vocab_mols, l):
                         print(f"seg {i} extra {extra} is not among black atom sets")
                         return l, None
             for exist_cluster in clusters:
-                if cluster & exist_cluster:
-                    if cluster == exist_cluster:
-                        breakpoint()
+                if cluster & exist_cluster:     
                     print(f"{cluster} should not intersect existing {exist_cluster}")
                     return l, None
             clusters.append(cluster)                
