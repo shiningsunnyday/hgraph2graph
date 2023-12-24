@@ -589,6 +589,9 @@ def seg_mol(mol, mol_segs, vocab_mols, l):
                     except:
                         print(f"{g2} bad syntax")                    
                         return l, None
+                    if extra_cluster == '':
+                        print(f"{g2} bad syntax")                    
+                        return l, None                        
                     extra_cluster = set(map(int, extra_cluster.split(',')))    
                     if extra_cluster & e_atoms:
                         if extra_cluster & e_atoms != e_atoms:
