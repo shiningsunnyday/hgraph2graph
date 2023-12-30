@@ -20,6 +20,38 @@ sys.path.append('/home/msun415/my_data_efficient_grammar/')
 # from fuseprop import find_fragments
 
 
+def break_bonds(mol, bonds, red_grps):
+    assert len(bonds) == len(red_grps)
+    for (b1, b2), (red_grp1, red_grp2) in zip(bonds, red_grps):
+        assert b1 in red_grp1
+        assert b2 in red_grp2
+    mol = Chem.RWMol(mol)
+    
+    for b1, b2 in bonds:
+        mol.RemoveBond(b1-1, b2-1)
+    
+    frags = Chem.GetMolFrags(mol) 
+    frags = [[f+1 for f in frag] for frag in frags]
+    frag_str = [','.join(map(str, frag)) for frag in frags]    
+    occur = [False for _ in frag_str]
+    for (b1, b2), (red_grp1, red_grp2) in zip(bonds, red_grps):
+        indices = [-1, -1]
+        for i in range(len(frags)):
+            if b1 in frags[i]:
+                indices[0] = i
+            elif b2 in frags[i]:
+                indices[1] = i
+
+        assert min(indices) > -1     
+
+        for j in range(2):
+            delim = ';' if occur[indices[j]] else ':'
+            frag_str[indices[j]] += delim + ','.join(map(str, red_grp1 if j else red_grp2))
+            occur[indices[j]] = True
+
+    return frag_str
+
+
 def mol_to_graph(mol, inds, r=False):
     graph = nx.Graph()
     for i, ind in enumerate(inds):
@@ -438,23 +470,23 @@ def process(args, data):
     vocab_mols = []
     l = 1
     hmol_fig_dir = os.path.join(args.group_dir, 'hmol_figs')
-    fig_dir = os.path.join(args.group_dir, 'figs')
+    fig_dir = os.path.join(args.group_dir, 'figs/clearer_figs/')
     walk_dir = os.path.join(args.group_dir, 'walks')
     os.makedirs(hmol_fig_dir, exist_ok=True)
     os.makedirs(fig_dir, exist_ok=True)
     os.makedirs(walk_dir, exist_ok=True)
     clearer_smiles = []
-    clearer_indices = [40, 41, 42, 43, 44, 45, 46, 55, 76, 77, 78, 79, 80, 81, 82, 97, 98, 99, 100, 105, 106, 107, 108, 109, 171]
+    clearer_indices = [49, 170, 211, 255, 261, 286, 288, 293, 295, 299]
+    # clearer_indices = [170,204,206,253,255,286,288,293,295,299,301,303,309]
     pics = []
     for i, line in tqdm(enumerate(data)):
-        # if i+1 not in [170,204,206,253,255,286,288,293,295,299,301,303,309]:
         if i+1 not in clearer_indices:
             continue
         s = line.strip("\r\n ") 
         hmol = MolGraph(s)           
         for j, a in enumerate(hmol.mol.GetAtoms()):
             a.SetProp('atomLabel', f"{a.GetSymbol()}{j+1}")
-        Chem.Draw.MolToFile(hmol.mol, os.path.join(fig_dir, f'{i+1}.png'), size=(1000,1000))
+        Chem.Draw.MolToFile(hmol.mol, os.path.join(fig_dir, f'{i+1}.png'), size=(2500,2500))
         pics.append(os.path.join(fig_dir, f'{i+1}.png'))
         clearer_smiles.append(f"{i+1} {s}")
 
@@ -506,18 +538,18 @@ def preprocess(smi):
 
 
 def main(args):
-    if args.data_file:
-        data = []
-        lines = open(args.data_file).readlines()
-        # data = [preprocess(l.split(',')[0]) for l in lines]
-        data = [l.split(',')[0] for l in lines]
+    data = []
+    lines = open(args.data_file).readlines()
+    # data = [preprocess(l.split(',')[0]) for l in lines]
+    data = [l.split(',')[0] for l in lines]
+
+
+    if args.do_seg:
+        vocab = seg_groups(args)
     else:
-        data = [mol for line in sys.stdin for mol in line.split()[:2]]
-
-
-    vocab = process(args, data)
-    os.makedirs(os.path.join(args.group_dir, f'all_groups/with_label/'), exist_ok=True)
-    # f = open(os.path.join(args.group_dir, "group_smiles.txt"), 'w+')        
+        vocab = process(args, data)
+    os.makedirs(os.path.join(args.group_dir, f'all_groups/with_label'), exist_ok=True)
+    f = open(os.path.join(args.group_dir, "group_smiles.txt"), 'w+')        
     extra = ""
     for smi, mol, i in vocab:
         # f.write(f"{smi}\n")
@@ -530,10 +562,10 @@ def main(args):
         extra += "\n"
         # Chem.rdmolfiles.MolToMolFile(mol, os.path.join(args.group_dir, f"all_groups/{i}.mol"))
         # Draw.MolToFile(mol, os.path.join(args.group_dir, f'all_groups/with_label/{i}.png'), size=(2000, 2000))
-    # f.close()
-
-    # with open(os.path.join(args.group_dir, "all_groups/all_extra.txt"), 'w+') as f:
-        # f.write(extra)    
+        f.write(f"{smi}\n")
+    f.close()
+    with open(os.path.join(args.group_dir, "all_groups/all_extra.txt"), 'w+') as f:
+        f.write(extra)    
 
 
 
@@ -581,6 +613,18 @@ def seg_mol(mol, mol_segs, vocab_mols, l):
             given_extras = red_bond_info.split(';')
             for e in given_extras:
                 extra = list(map(int, e.split(',')))
+                if len(extra) > 6:
+                    # cluster_neis = [nei.GetIdx() for c in cluster for nei in mol.GetAtomWithIdx(c-1).GetNeighbors()]
+                    # cluster_neis = [c for c in cluster_neis if c in extra]
+                    # if len(cluster_neis) == 1:
+                    #     if mol.GetAtomWithIdx(cluster_neis[0]).IsInRing():
+                    #         breakpoint()
+                    #     else:
+                    #         extra = cluster_neis
+                    # else:
+                    #     breakpoint()
+                    print(f"{extra} has >6 atoms, make sure red group is not over-specified")
+                    return l, None
                 e_atoms = set(map(int, e.split(',')))
                 extras.append(extra)
                 for j, g2 in enumerate(mol_segs):
@@ -604,7 +648,7 @@ def seg_mol(mol, mol_segs, vocab_mols, l):
                         return l, None
             for exist_cluster in clusters:
                 if cluster & exist_cluster:     
-                    print(f"{cluster} should not intersect existing {exist_cluster}")
+                    print(f"{cluster} should not intersect existing {exist_cluster} at {cluster & exist_cluster}")
                     return l, None
             clusters.append(cluster)                
             cluster, red_bond_info = g1.split(':')
@@ -619,8 +663,9 @@ def seg_mol(mol, mol_segs, vocab_mols, l):
             bad_extras = ','.join([str(c) for c, v in Counter(extra_atoms).items() if v>1])
             print(f"{bad_extras} should appear at most once in {red_bond_info}")
             return l, None
-        if set(cluster) & set(extra_atoms):
-            print(f"red {extra_atoms} should not intersect black atom set {cluster}")
+        intersect_atoms = set(cluster) & set(extra_atoms)
+        if intersect_atoms:            
+            print(f"red {extra_atoms} should not intersect black atom set {cluster} at {intersect_atoms}")
             return l, None
         
         for idx in cluster+extra_atoms:
@@ -707,8 +752,9 @@ def seg_mol(mol, mol_segs, vocab_mols, l):
         graph.add_edge(node_label[src], node_label[dest], r_grp_1=r_grp_1, b2=b2, r_grp_2=r_grp_2, b1=b1)
         graph.add_edge(node_label[dest], node_label[src], r_grp_1=r_grp_2, b2=b1, r_grp_2=r_grp_1, b1=b2)                            
 
-    if reduce(lambda x,y: x|y, clusters) != set(range(1, mol.GetNumAtoms()+1)):
-        print(f"black atoms don't add up to {list(range(1, mol.GetNumAtoms()+1))}")
+    not_black = set(range(1, mol.GetNumAtoms()+1)) - reduce(lambda x,y: x|y, clusters)
+    if not_black:        
+        print(f"black atoms don't add up to {list(range(1, mol.GetNumAtoms()+1))}, where is {not_black}?")
         return l, None        
    
     # print(" ".join([mol_seg.split(":")[0] for mol_seg in mol_segs]))
@@ -755,9 +801,115 @@ def seg_groups(args):
         mol = Chem.MolFromSmiles(s)
         Chem.Kekulize(mol, clearAromaticFlags=True)
         if i+1 not in segs:
+            breakpoint()
             continue
         else:
             print(f"segmenting mol {i+1}")
+        
+        """
+        a few remaining cases
+        """        
+        if i+1 == 299:
+            bonds = [
+                [79,80],
+                [14,15],
+                [10,11],
+                [19,20],
+                [28,29],
+                [24,25],
+                [35,36],
+                [36,37]]
+            red_grps = [
+                ([79,15,71,76,77], [80,81,82,83,84,85]),
+                ([13,14,12,11,87,86], [15]),
+                ([10], [12,11,87,86,14,13]),
+                ([16,70,69,19,18,17], [20]),
+                ([28,27,26,25,62,61], [29,59,58,32,30]),
+                ([24,23,22,21,64,63], [25,26,27,28,61,62]),
+                ([35,34,33,32,58,57], [36]),
+                ([36], [37,42,41,40,39,38])
+            ]
+            segs[i+1] = break_bonds(mol, bonds, red_grps)            
+        elif i+1 == 308:
+            bonds = [
+                [6,7],
+                [10,11],
+                [19,20],
+                [23,24],
+                [30,31],
+                [31,32]
+            ]
+            red_grps = [
+                ([6], [7,67,66,10,9,8]),
+                ([7,67,66,10,9,8], [11,65,64,14,13,12]),
+                ([19], [20,21,22,23,56,57]),
+                ([20,21,22,23,56,57], [24,25,27,53,54]),
+                ([30,29,28,27,53,52], [31]),
+                ([31], [32,37,36,35,34,33])
+            ]
+            segs[i+1] = break_bonds(mol, bonds, red_grps)            
+        elif i+1 == 309:
+            bonds = [
+                [6,7],
+                [10,11],
+                [19,20],
+                [23,24],
+                [30,31],
+                [31,32]
+            ]
+            red_grps = [
+                ([6], [7,66,65,10,9,8]),
+                ([7,66,65,10,9,8], [11]),
+                ([19], [20,21,22,23,56,57]),
+                ([20,21,22,23,56,57], [24]),
+                ([30,29,28,27,53,52], [31]),
+                ([31], [32,37,36,35,34,33])
+            ]
+            segs[i+1] = break_bonds(mol, bonds, red_grps)            
+        elif i+1 == 311:
+            bonds = [
+                [10,11],
+                [20,21],
+                [24,25],
+                [31,32],
+                [32,33]
+            ]
+            red_grps = [
+                ([10,66,67,7,8,9], [11,65,15,14,13,12]),
+                ([20], [21,22,23,24,57,58]),
+                ([21,22,23,24,57,58], [25,26,28,54,55]),
+                ([31,30,29,28,54,53], [32]),
+                ([32], [33,38,37,36,35,34])
+            ]            
+            segs[i+1] = break_bonds(mol, bonds, red_grps)            
+        elif i+1 == 319:
+            bonds = [
+                [10,11],
+                [16,17],
+                [23,24]
+            ]
+            red_grps = [
+                ([10,8,6,5,42],[11,12,14,16,38,40]),
+                ([11,12,14,16,38,40], [17,36,35,20,18]),
+                ([23,22,21,20,35,34], [24])
+            ]
+            segs[i+1] = break_bonds(mol, bonds, red_grps)                                 
+        elif i+1 == 320:
+            bonds = [
+                [11,10],
+                [20,21],
+                [25,26],
+                [32,33]
+            ]
+            red_grps = [
+                ([11,12,14,15,53,54], [10,8,6,5,56]),
+                ([20,18,17,16,51,50], [21,22,23,25,47,49]),
+                ([21,22,23,25,47,49], [26,27,28,44,45]),
+                ([32],[33])
+            ]
+            segs[i+1] = break_bonds(mol, bonds, red_grps)            
+            
+
         cur_len = len(vocab_mols)
         l, G = seg_mol(mol, segs[i+1], vocab_mols, l)                
         if G is None:
@@ -768,7 +920,6 @@ def seg_groups(args):
         #     Chem.rdmolfiles.MolToMolFile(mol, os.path.join(group_dir, f"{ind}.mol"))
         #     Draw.MolToFile(mol, os.path.join(label_dir, f'{ind}.png'), size=(200, 200))              
         # if not G.edges():
-        #     breakpoint()
         #     assert len(G.nodes()) == 1
         #     root = list(G.nodes())[0]
         #     G.add_edge(root, root)
@@ -791,7 +942,5 @@ if __name__ == "__main__":
     parser.add_argument('--out_file')
     args = parser.parse_args()
 
-    if args.do_seg:    
-        seg_groups(args)
-    else:
-        main(args)
+
+    main(args)
